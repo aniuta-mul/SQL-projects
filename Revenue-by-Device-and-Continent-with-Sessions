@@ -1,0 +1,56 @@
+/*Calculate revenue by country and device and count the number of sessions, accounts and verified accounts*/
+
+--Calculate revenue by country and device
+WITH revenue_data AS(
+SELECT sp.continent AS continent,
+      SUM(pr.price) AS revenue,
+      SUM(CASE WHEN sp.device = 'mobile' THEN pr.price END) AS revenue_mobile,
+      SUM(CASE WHEN sp.device = 'desktop' THEN pr.price END) AS revenue_desktop
+FROM `DA.order` o
+JOIN `DA.session_params` sp
+ON o.ga_session_id = sp.ga_session_id
+JOIN `DA.product` pr
+ON o.item_id = pr.item_id
+GROUP BY continent
+),
+
+--Count the number of accounts and verified accounts
+a_data AS(
+SELECT sp.continent AS cont,
+      COUNT(DISTINCT ac.id) AS accont_cnt,
+      COUNT(CASE WHEN ac.is_verified = 1 THEN ac.id END) AS verified_account,
+     
+FROM `DA.account_session` ass
+JOIN `DA.session_params` sp
+ON sp.ga_session_id = ass.ga_session_id
+JOIN `DA.account` ac
+ON ac.id = ass.account_id
+GROUP BY sp.continent
+),
+
+--Count the number of sessions
+session_c AS(
+SELECT sp.continent AS cont,
+      COUNT(sp.ga_session_id) AS session_count
+FROM `DA.session_params` sp
+JOIN `DA.session` s
+ON sp.ga_session_id = s.ga_session_id
+GROUP BY sp.continent
+)
+
+
+SELECT continent,
+      revenue,
+      revenue_mobile,
+      revenue_desktop,
+      revenue/SUM(revenue) OVER()*100 AS revenue_total_percent,
+      accont_cnt,
+      verified_account,
+      session_count
+FROM session_c
+LEFT JOIN revenue_data
+ON session_c.cont = revenue_data.continent
+LEFT JOIN a_data
+ON a_data.cont = session_c.cont
+GROUP BY 1, 2, 3, 4, 6, 7, 8
+ORDER BY revenue DESC
