@@ -17,6 +17,7 @@ SELECT
       COUNT(s.ga_session_id) AS sent_cnt,
       MIN(DATE_ADD(s.date, INTERVAL es.sent_date day)) AS first_sent_date,
       MAX(DATE_ADD(s.date, INTERVAL es.sent_date day)) AS last_sent_date
+
 FROM `DA.email_sent` es
 JOIN `DA.account_session` ass
 ON es.id_account = ass.account_id
