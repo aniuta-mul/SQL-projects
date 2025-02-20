@@ -1,0 +1,124 @@
+/*analyze the dynamics of account creation, user activity by mail (sending, opening, transitions). Evaluate behavior in categories such as posting interval, account verification, and subscription status.*/
+
+-- Find the necessary data for the account depending on the date and country
+WITH account_inf AS(
+SELECT s.date AS date__,
+     country,
+     send_interval,
+     is_verified,
+     is_unsubscribed,
+     COUNT(DISTINCT a.id) AS account_cnt
+FROM `DA.account` a
+JOIN `DA.account_session` acs
+ON a.id = acs.account_id
+JOIN `DA.session` s
+ON s.ga_session_id = acs.ga_session_id
+JOIN `DA.session_params` sp
+ON s.ga_session_id = sp.ga_session_id
+GROUP BY 1, 2, 3, 4, 5
+),
+
+—-find information about mails
+msg AS(
+SELECT DATE_ADD(s.date, INTERVAL es.sent_date DAY) AS date_,
+      country,
+      COUNT(es.id_message) AS sent_msg,
+      COUNT(eo.id_message) AS open_msg,
+      COUNT(ev.id_message) AS visit_msg
+FROM `DA.email_sent` es
+JOIN `DA.account_session` acs
+ON es.id_account = acs.account_id
+JOIN `DA.session` s
+ON s.ga_session_id = acs.ga_session_id
+LEFT JOIN `DA.email_open` eo
+ON es.id_message = eo.id_message
+LEFT JOIN `DA.email_visit` ev
+ON es.id_message = ev.id_message
+JOIN `DA.session_params` sp
+ON sp.ga_session_id = s.ga_session_id
+GROUP BY date_, country
+),
+
+-- unite CTE account_inf with CTE msg
+union_ AS(
+SELECT date__ AS _date,
+     country,
+     send_interval,
+     is_verified,
+     is_unsubscribed,
+     account_cnt,
+     0 AS sent_msg,
+     0 AS open_msg,
+     0 AS visit_msg
+FROM account_inf
+UNION ALL
+SELECT date_ AS _date,
+     country,
+     0 AS send_interval,
+     0 AS is_verified,
+     0 AS is_unsubscribed,
+     0 AS account_cnt,
+     sent_msg,
+     open_msg,
+     visit_msg
+FROM msg
+),
+
+-- aggregate data and group data 
+finel AS(
+SELECT _date,
+     country,
+     send_interval,
+     is_verified,
+     is_unsubscribed,
+     SUM(account_cnt) AS account_cnt,
+     SUM(sent_msg) AS sent_msg,
+     SUM(open_msg) AS open_msg,
+     SUM(visit_msg) AS visit_msg,
+FROM union_
+GROUP BY _date, country, send_interval, is_verified, is_unsubscribed
+)
+
+-- Select all required data in rank_total_country_account_cnt or rank_total_country_sent_cnt less than or equal to 10.
+SELECT _date,
+     country,
+     send_interval,
+     is_verified,
+     is_unsubscribed,
+     account_cnt,
+     sent_msg,
+     open_msg,
+     visit_msg,
+     total_country_account_cnt,
+     total_country_sent_cnt,
+     rank_total_country_account_cnt,
+     rank_total_country_sent_cnt
+FROM( -- find the ranking of countries by the number of created subscribers and sent letters using window function.
+SELECT _date,
+     country,
+     send_interval,
+     is_verified,
+     is_unsubscribed,
+     account_cnt,
+     sent_msg,
+     open_msg,
+     visit_msg,
+     total_country_account_cnt,
+     total_country_sent_cnt,
+     DENSE_RANK() OVER(ORDER BY total_country_account_cnt DESC) AS rank_total_country_account_cnt,
+     DENSE_RANK() OVER(ORDER BY total_country_sent_cnt DESC) AS rank_total_country_sent_cnt
+FROM( -- find the total number of created subscribers and sent letters by country using the window function
+SELECT _date,
+     country,
+     send_interval,
+     is_verified,
+     is_unsubscribed,
+     account_cnt,
+     sent_msg,
+     open_msg,
+     visit_msg,
+     SUM(account_cnt) OVER(PARTITION BY country) AS total_country_account_cnt,
+     SUM(sent_msg) OVER(PARTITION BY country) AS total_country_sent_cnt
+FROM finel
+))
+WHERE rank_total_country_account_cnt <= 10 OR rank_total_country_sent_cnt <= 10
