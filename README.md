@@ -1,1 +1,1 @@
-# Sales-analytics
+# SQL projects
